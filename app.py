@@ -3,17 +3,16 @@ import sqlite3
 from datetime import datetime
 import base64, io, secrets
 import qrcode
+import os
 
 APP_TITLE = "Points"
 DB_FILE = "points.db"
 
-# Адмін-ключ (змініть!)
-ADMIN_KEY = "CHANGE_ME_12345"
+# ✅ Краще так: в Render задайте змінну середовища ADMIN_KEY
+ADMIN_KEY = os.environ.get("ADMIN_KEY", "CHANGE_ME_12345")
 
-# Публічна адреса для друку на картці (ссылка буде просто на сайт)
-# Якщо сайт у інтернеті: "https://ваш-домен.com"
-# Якщо поки локально: лишіть "" (буде брати з браузера)
-PUBLIC_BASE_URL = ""
+# Якщо сайт у інтернеті й хочете друкувати саме домен — можна задати PUBLIC_BASE_URL в Render
+PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip()
 
 app = Flask(__name__)
 
@@ -58,8 +57,7 @@ def list_cards():
     return rows
 
 def create_card(owner: str) -> str:
-    # Це і є “номер картки” (те, що кодується в QR і що вводять користувачі)
-    token = secrets.token_urlsafe(8)
+    token = secrets.token_urlsafe(8)  # номер картки (в QR і для вводу)
     conn = db()
     conn.execute(
         "INSERT INTO cards(token, owner, points, created_at) VALUES(?,?,?,?)",
@@ -88,8 +86,8 @@ def delete_card(token: str):
 
 # ---------- helpers ----------
 def base_url():
-    if PUBLIC_BASE_URL.strip():
-        return PUBLIC_BASE_URL.strip().rstrip("/")
+    if PUBLIC_BASE_URL:
+        return PUBLIC_BASE_URL.rstrip("/")
     return request.host_url.rstrip("/")
 
 def make_qr_data_uri(text: str) -> str:
@@ -115,7 +113,7 @@ ADMIN_HTML = """
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Адмін</title>
 <style>
-body{font-family:system-ui,Arial;margin:18px;max-width:1000px}
+body{font-family:system-ui,Arial;margin:18px;max-width:1100px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 a.btn,button{padding:10px 12px;border:1px solid #ccc;background:#f7f7f7;border-radius:10px;text-decoration:none;color:#111}
 .card{border:1px solid #eee;border-radius:14px;padding:12px;margin-top:12px}
@@ -157,7 +155,7 @@ input{padding:10px;border:1px solid #ccc;border-radius:10px}
     <a class="btn" href="{{url_for('print_card', token=c['token']) + '?k=' + k}}">Друкувати</a>
     <a class="btn" href="{{url_for('user_points', token=c['token'])}}">Користувач</a>
 
-    <!-- ✅ КНОПКА ВИДАЛИТИ -->
+    <!-- ✅ ВИДАЛИТИ -->
     <form method="post"
           action="{{ url_for('admin_delete_user', token=c['token']) }}?k={{k}}"
           style="display:inline;"
@@ -252,7 +250,6 @@ img{width:32mm;height:32mm}
 
   <div class="row">
     <div>
-      <!-- QR = номер картки (token), щоб сканер додавав бали -->
       <img src="{{qr}}" alt="QR">
       <div class="token">{{token}}</div>
     </div>
@@ -289,7 +286,7 @@ button{padding:10px 12px;border:1px solid #ccc;background:#f7f7f7;border-radius:
 <div class="muted">Введіть номер картки або натисніть «Сканувати QR».</div>
 
 <div class="box">
-  <input id="token" placeholder="Номер картки (наприклад: AbC123...)" autocomplete="off">
+  <input id="token" placeholder="Номер картки" autocomplete="off">
   <div class="row">
     <button id="go">Показати бали</button>
     <button id="start">Сканувати QR</button>
@@ -435,7 +432,7 @@ def print_card(token):
         k=k
     )
 
-# ✅ НОВЕ: видалити одного користувача
+# ✅ Видалити одного користувача
 @app.route("/admin/delete/<token>", methods=["POST"])
 def admin_delete_user(token):
     require_admin()
@@ -461,6 +458,6 @@ def api_admin_scan():
 
 if __name__ == "__main__":
     init_db()
-    print("Public:", "http://127.0.0.1:5000/")
-    print("Admin :", "http://127.0.0.1:5000/admin?k=" + ADMIN_KEY)
-    app.run(host="127.0.0.1", port=5000, debug=False)
+    # ✅ Render: слухаємо 0.0.0.0 і PORT з environment
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
