@@ -1,22 +1,20 @@
 import os
 import psycopg2
-from flask import Flask, request, redirect, session, url_for
+from flask import Flask, request, redirect, session
 import random
 import string
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key"
+app.secret_key = "super_secret_key_123"
 
+# Беремо базу з Render Environment
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-if not DATABASE_URL:
-    raise ValueError("DATABASE_URL not set!")
-
 def get_connection():
-    return psycopg2.connect(DATABASE_URL, sslmode='require')
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-# ---------- INIT DATABASE ----------
+# ---------------- INIT DATABASE ----------------
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -39,7 +37,7 @@ def init_db():
     """)
 
     # створюємо адміна якщо нема
-    cur.execute("SELECT * FROM users WHERE username='admin';")
+    cur.execute("SELECT * FROM users WHERE username=%s;", ("admin",))
     if not cur.fetchone():
         cur.execute(
             "INSERT INTO users (username, password) VALUES (%s, %s);",
@@ -53,7 +51,7 @@ def init_db():
 init_db()
 
 
-# ---------- LOGIN ----------
+# ---------------- LOGIN ----------------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -80,13 +78,13 @@ def login():
             Username:<br>
             <input name="username"><br><br>
             Password:<br>
-            <input name="password" type="password"><br><br>
+            <input type="password" name="password"><br><br>
             <button type="submit">Login</button>
         </form>
     """
 
 
-# ---------- ADMIN ----------
+# ---------------- ADMIN ----------------
 @app.route("/admin")
 def admin():
     if "user" not in session:
@@ -106,12 +104,12 @@ def admin():
     <h3>Додати картку</h3>
     <form method="post" action="/add_card">
         Ім'я:<br>
-        <input name="name"><br><br>
+        <input name="name" required><br><br>
         <button type="submit">Додати</button>
     </form>
 
     <h3>Список карток</h3>
-    <table border=1>
+    <table border="1">
     <tr><th>Ім'я</th><th>Номер</th><th>Бали</th><th>Дії</th></tr>
     """
 
@@ -133,7 +131,7 @@ def admin():
     return html
 
 
-# ---------- ADD CARD ----------
+# ---------------- ADD CARD ----------------
 @app.route("/add_card", methods=["POST"])
 def add_card():
     if "user" not in session:
@@ -155,7 +153,7 @@ def add_card():
     return redirect("/admin")
 
 
-# ---------- ADD POINT ----------
+# ---------------- ADD POINT ----------------
 @app.route("/add_point/<card_number>")
 def add_point(card_number):
     conn = get_connection()
@@ -171,7 +169,7 @@ def add_point(card_number):
     return redirect("/admin")
 
 
-# ---------- DELETE ----------
+# ---------------- DELETE ----------------
 @app.route("/delete/<card_number>")
 def delete(card_number):
     conn = get_connection()
@@ -187,7 +185,7 @@ def delete(card_number):
     return redirect("/admin")
 
 
-# ---------- PRINT ----------
+# ---------------- PRINT ----------------
 @app.route("/print/<card_number>")
 def print_card(card_number):
     return f"""
@@ -195,20 +193,20 @@ def print_card(card_number):
     <body onload="window.print()">
         <h2>Бонусна картка</h2>
         <h3>№ {card_number}</h3>
-        <p>Перевірити бали:</p>
-        <p>https://points-app-ndyb.onrender.com/</p>
+        <p>Перевірити сайт:</p>
+        <p>https://points-app-ndyb.onrender.com/login</p>
     </body>
     </html>
     """
 
 
-# ---------- LOGOUT ----------
+# ---------------- LOGOUT ----------------
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
 
 
-# ---------- MAIN ----------
+# ---------------- START ----------------
 if __name__ == "__main__":
     app.run()
