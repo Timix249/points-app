@@ -1,196 +1,200 @@
 import os
 import psycopg2
-from flask import Flask, request, redirect, url_for, session
+from flask import Flask, request, redirect, session, url_for
+import random
+import string
 
 app = Flask(__name__)
-app.secret_key = "super_secret_key_123"
+app.secret_key = "super_secret_key"
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-ADMIN_USERNAME = "admin"
-ADMIN_PASSWORD = "123456"   # можеш змінити
-
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL not set!")
 
 def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+    return psycopg2.connect(DATABASE_URL, sslmode='require')
 
 
+# ---------- INIT DATABASE ----------
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        );
+    """)
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS cards (
             id SERIAL PRIMARY KEY,
-            number TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            card_number TEXT UNIQUE NOT NULL,
             points INTEGER DEFAULT 0
         );
     """)
+
+    # створюємо адміна якщо нема
+    cur.execute("SELECT * FROM users WHERE username='admin';")
+    if not cur.fetchone():
+        cur.execute(
+            "INSERT INTO users (username, password) VALUES (%s, %s);",
+            ("admin", "admin123")
+        )
+
     conn.commit()
     cur.close()
     conn.close()
 
-
 init_db()
 
 
-# ---------------- ПЕРЕВІРКА АВТОРИЗАЦІЇ ----------------
-def is_logged_in():
-    return session.get("logged_in")
-
-
-# ---------------- ГОЛОВНА ----------------
-@app.route("/", methods=["GET", "POST"])
-def home():
-    if request.method == "POST":
-        number = request.form["number"]
-
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT points FROM cards WHERE number=%s;", (number,))
-        card = cur.fetchone()
-        cur.close()
-        conn.close()
-
-        if card:
-            return f"<h2>Картка №{number}</h2><h3>Бали: {card[0]}</h3>"
-        else:
-            return "<h3>Картку не знайдено</h3>"
-
-    return """
-        <h2>Перевірити бали</h2>
-        <form method="POST">
-            <input name="number" placeholder="Номер картки" required>
-            <button type="submit">Перевірити</button>
-        </form>
-        <br>
-        <a href="/login">Адмін логін</a>
-    """
-
-
-# ---------------- LOGIN ----------------
+# ---------- LOGIN ----------
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
         username = request.form["username"]
         password = request.form["password"]
 
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            session["logged_in"] = True
-            return redirect(url_for("admin"))
-        else:
-            return "<h3>Неправильний логін або пароль</h3>"
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT * FROM users WHERE username=%s AND password=%s;",
+            (username, password)
+        )
+        user = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if user:
+            session["user"] = username
+            return redirect("/admin")
 
     return """
-        <h2>Адмін логін</h2>
-        <form method="POST">
-            <input name="username" placeholder="Логін" required><br><br>
-            <input name="password" type="password" placeholder="Пароль" required><br><br>
-            <button type="submit">Увійти</button>
+        <h2>Login</h2>
+        <form method="post">
+            Username:<br>
+            <input name="username"><br><br>
+            Password:<br>
+            <input name="password" type="password"><br><br>
+            <button type="submit">Login</button>
         </form>
     """
 
 
-# ---------------- LOGOUT ----------------
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect(url_for("home"))
-
-
-# ---------------- АДМІН ----------------
+# ---------- ADMIN ----------
 @app.route("/admin")
 def admin():
-    if not is_logged_in():
-        return redirect(url_for("login"))
+    if "user" not in session:
+        return redirect("/login")
 
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT number, points FROM cards ORDER BY id DESC;")
+    cur.execute("SELECT name, card_number, points FROM cards ORDER BY id DESC;")
     cards = cur.fetchall()
     cur.close()
     conn.close()
 
-    html = "<h2>Адмін панель</h2>"
-    html += '<a href="/logout">Вийти</a><br><br>'
-    html += '<a href="/add">Додати картку</a><br><br>'
+    html = """
+    <h1>Адмін панель</h1>
+    <a href="/logout">Вийти</a><br><br>
 
-    for number, points in cards:
+    <h3>Додати картку</h3>
+    <form method="post" action="/add_card">
+        Ім'я:<br>
+        <input name="name"><br><br>
+        <button type="submit">Додати</button>
+    </form>
+
+    <h3>Список карток</h3>
+    <table border=1>
+    <tr><th>Ім'я</th><th>Номер</th><th>Бали</th><th>Дії</th></tr>
+    """
+
+    for name, number, points in cards:
         html += f"""
-        <div style="margin-bottom:10px;">
-            №{number} | Бали: {points}
-            <a href="/add_points/{number}">➕</a>
-            <a href="/delete/{number}">❌ Видалити</a>
-            <a href="/print/{number}">🖨 Друк</a>
-        </div>
+        <tr>
+            <td>{name}</td>
+            <td>{number}</td>
+            <td>{points}</td>
+            <td>
+                <a href="/add_point/{number}">+1</a>
+                <a href="/print/{number}">Друк</a>
+                <a href="/delete/{number}">Видалити</a>
+            </td>
+        </tr>
         """
 
+    html += "</table>"
     return html
 
 
-# ---------------- ДОДАТИ КАРТКУ ----------------
-@app.route("/add")
+# ---------- ADD CARD ----------
+@app.route("/add_card", methods=["POST"])
 def add_card():
-    if not is_logged_in():
-        return redirect(url_for("login"))
+    if "user" not in session:
+        return redirect("/login")
 
-    number = str(int.from_bytes(os.urandom(3), "big"))
+    name = request.form["name"]
+    card_number = ''.join(random.choices(string.digits, k=8))
 
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO cards (number, points) VALUES (%s, 0) ON CONFLICT DO NOTHING;",
-        (number,),
+        "INSERT INTO cards (name, card_number) VALUES (%s, %s);",
+        (name, card_number)
     )
     conn.commit()
     cur.close()
     conn.close()
 
-    return redirect(url_for("admin"))
+    return redirect("/admin")
 
 
-# ---------------- ДОДАТИ БАЛ ----------------
-@app.route("/add_points/<number>")
-def add_points(number):
-    if not is_logged_in():
-        return redirect(url_for("login"))
-
+# ---------- ADD POINT ----------
+@app.route("/add_point/<card_number>")
+def add_point(card_number):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("UPDATE cards SET points = points + 1 WHERE number=%s;", (number,))
+    cur.execute(
+        "UPDATE cards SET points = points + 1 WHERE card_number=%s;",
+        (card_number,)
+    )
     conn.commit()
     cur.close()
     conn.close()
 
-    return redirect(url_for("admin"))
+    return redirect("/admin")
 
 
-# ---------------- ВИДАЛИТИ ----------------
-@app.route("/delete/<number>")
-def delete(number):
-    if not is_logged_in():
-        return redirect(url_for("login"))
-
+# ---------- DELETE ----------
+@app.route("/delete/<card_number>")
+def delete(card_number):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("DELETE FROM cards WHERE number=%s;", (number,))
+    cur.execute(
+        "DELETE FROM cards WHERE card_number=%s;",
+        (card_number,)
+    )
     conn.commit()
     cur.close()
     conn.close()
 
-    return redirect(url_for("admin"))
+    return redirect("/admin")
 
 
-# ---------------- ДРУК ----------------
-@app.route("/print/<number>")
-def print_card(number):
-    if not is_logged_in():
-        return redirect(url_for("login"))
-
+# ---------- PRINT ----------
+@app.route("/print/<card_number>")
+def print_card(card_number):
     return f"""
     <html>
     <body onload="window.print()">
         <h2>Бонусна картка</h2>
-        <h3>№ {number}</h3>
+        <h3>№ {card_number}</h3>
         <p>Перевірити бали:</p>
         <p>https://points-app-ndyb.onrender.com/</p>
     </body>
@@ -198,5 +202,13 @@ def print_card(number):
     """
 
 
+# ---------- LOGOUT ----------
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+# ---------- MAIN ----------
 if __name__ == "__main__":
     app.run()
