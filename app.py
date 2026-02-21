@@ -5,7 +5,7 @@ import random
 import string
 
 app = Flask(__name__)
-app.secret_key = "secret_key_123"
+app.secret_key = "super_secret_key"
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -13,7 +13,7 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-# ---------- CREATE TABLES ----------
+# ---------- INIT DB ----------
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -35,7 +35,6 @@ def init_db():
     );
     """)
 
-    # створюємо адміна якщо нема
     cur.execute("SELECT * FROM users WHERE username=%s;", ("admin",))
     if not cur.fetchone():
         cur.execute(
@@ -47,12 +46,139 @@ def init_db():
     cur.close()
     conn.close()
 
-
-# 🔥 ВАЖЛИВО — викликаємо одразу
 init_db()
 
 
-# ---------- LOGIN ----------
+# =====================================================
+# ================= USER SIDE =========================
+# =====================================================
+
+@app.route("/")
+def home():
+    return """
+<!DOCTYPE html>
+<html>
+<head>
+<title>Points Card</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/html5-qrcode"></script>
+<style>
+body {
+    font-family: Arial;
+    text-align: center;
+    background: linear-gradient(135deg, #1e3c72, #2a5298);
+    color: white;
+    padding: 20px;
+}
+button {
+    padding: 12px 20px;
+    border: none;
+    background: #ffffff;
+    color: #2a5298;
+    border-radius: 10px;
+    font-weight: bold;
+}
+</style>
+</head>
+<body>
+
+<h1>Scan Your Card</h1>
+<p>Use camera to check your points</p>
+
+<div id="reader" style="width:300px;margin:auto;"></div>
+
+<script>
+function onScanSuccess(decodedText) {
+    window.location.href = "/check/" + decodedText;
+}
+new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 })
+.render(onScanSuccess);
+</script>
+
+<br><br>
+<a href="/login" style="color:white;">Admin Login</a>
+
+</body>
+</html>
+"""
+
+
+@app.route("/check/<number>")
+def check(number):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT name, points FROM cards WHERE number=%s;", (number,))
+    card = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    if not card:
+        return "<h2>Card not found</h2><a href='/'>Back</a>"
+
+    name, points = card
+
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>Your Card</title>
+<style>
+body {{
+    font-family: Arial;
+    text-align: center;
+    background: #f4f4f4;
+    padding: 30px;
+}}
+.card {{
+    background: white;
+    padding: 25px;
+    border-radius: 20px;
+    max-width: 350px;
+    margin: auto;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+}}
+h2 {{
+    margin: 0;
+}}
+.points {{
+    font-size: 28px;
+    margin: 15px 0;
+    color: #2a5298;
+}}
+@media print {{
+    button {{ display:none; }}
+}}
+button {{
+    padding: 10px 20px;
+    border: none;
+    background: #2a5298;
+    color: white;
+    border-radius: 10px;
+}}
+</style>
+</head>
+<body>
+
+<div class="card">
+<h2>{name}</h2>
+<div class="points">Points: {points}</div>
+<p>Card: {number}</p>
+</div>
+
+<br>
+<button onclick="window.print()">Print</button>
+<br><br>
+<a href="/">Back</a>
+
+</body>
+</html>
+"""
+
+
+# =====================================================
+# ================= ADMIN SIDE ========================
+# =====================================================
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
@@ -74,18 +200,15 @@ def login():
             return redirect("/admin")
 
     return """
-    <h2>Login</h2>
+    <h2>Admin Login</h2>
     <form method="post">
-    Username:<br>
-    <input name="username"><br><br>
-    Password:<br>
-    <input type="password" name="password"><br><br>
+    <input name="username" placeholder="Username"><br><br>
+    <input type="password" name="password" placeholder="Password"><br><br>
     <button type="submit">Login</button>
     </form>
     """
 
 
-# ---------- ADMIN ----------
 @app.route("/admin")
 def admin():
     if "user" not in session:
@@ -99,15 +222,28 @@ def admin():
     conn.close()
 
     html = """
-    <h1>Admin</h1>
+    <h1>Admin Panel</h1>
     <a href="/logout">Logout</a><br><br>
-    <h3>Add card</h3>
+
+    <h3>Create Card</h3>
     <form method="post" action="/add">
-    Name:<br>
-    <input name="name" required><br><br>
-    <button type="submit">Add</button>
+    <input name="name" placeholder="Name" required>
+    <button type="submit">Create</button>
     </form>
-    <h3>Cards</h3>
+
+    <h3>Scan to Add Point</h3>
+    <div id="reader" style="width:300px;"></div>
+
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    <script>
+    function onScanSuccess(decodedText) {
+        window.location.href = "/plus/" + decodedText;
+    }
+    new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 })
+    .render(onScanSuccess);
+    </script>
+
+    <h3>All Cards</h3>
     <table border="1">
     <tr><th>Name</th><th>Number</th><th>Points</th><th>Action</th></tr>
     """
@@ -129,7 +265,6 @@ def admin():
     return html
 
 
-# ---------- ADD CARD ----------
 @app.route("/add", methods=["POST"])
 def add():
     if "user" not in session:
@@ -148,10 +283,18 @@ def add():
     cur.close()
     conn.close()
 
-    return redirect("/admin")
+    return f"""
+    <h2>Card Created</h2>
+    <p>Name: {name}</p>
+    <p>Number: {number}</p>
+    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={number}">
+    <br><br>
+    <button onclick="window.print()">Print Card</button>
+    <br><br>
+    <a href="/admin">Back</a>
+    """
 
 
-# ---------- ADD POINT ----------
 @app.route("/plus/<number>")
 def plus(number):
     conn = get_connection()
@@ -163,11 +306,9 @@ def plus(number):
     conn.commit()
     cur.close()
     conn.close()
-
     return redirect("/admin")
 
 
-# ---------- DELETE ----------
 @app.route("/delete/<number>")
 def delete(number):
     conn = get_connection()
@@ -179,11 +320,9 @@ def delete(number):
     conn.commit()
     cur.close()
     conn.close()
-
     return redirect("/admin")
 
 
-# ---------- LOGOUT ----------
 @app.route("/logout")
 def logout():
     session.clear()
