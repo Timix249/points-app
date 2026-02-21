@@ -13,7 +13,8 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-# ---------- INIT DB ----------
+# ================= INIT DATABASE =================
+
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -49,9 +50,7 @@ def init_db():
 init_db()
 
 
-# =====================================================
-# ================= USER SIDE =========================
-# =====================================================
+# ================= USER SIDE =================
 
 @app.route("/")
 def home():
@@ -59,33 +58,46 @@ def home():
 <!DOCTYPE html>
 <html>
 <head>
-<title>Points Card</title>
+<title>Punkte System</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="https://unpkg.com/html5-qrcode"></script>
 <style>
 body {
-    font-family: Arial;
-    text-align: center;
-    background: linear-gradient(135deg, #1e3c72, #2a5298);
-    color: white;
-    padding: 20px;
+    margin:0;
+    font-family:Arial;
+    background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);
+    color:white;
+    text-align:center;
 }
-button {
-    padding: 12px 20px;
-    border: none;
-    background: #ffffff;
-    color: #2a5298;
-    border-radius: 10px;
-    font-weight: bold;
+.container {
+    padding:50px 20px;
+}
+.logo {
+    font-size:28px;
+    font-weight:bold;
+    margin-bottom:10px;
+}
+#reader {
+    margin:auto;
+    width:300px;
+}
+.admin-link {
+    margin-top:40px;
+    display:inline-block;
+    color:white;
+    opacity:0.6;
 }
 </style>
 </head>
 <body>
 
-<h1>Scan Your Card</h1>
-<p>Use camera to check your points</p>
-
-<div id="reader" style="width:300px;margin:auto;"></div>
+<div class="container">
+    <div class="logo">⭐ POINTS CLUB</div>
+    <h2>Karte scannen</h2>
+    <p>QR Code vor Kamera halten</p>
+    <div id="reader"></div>
+    <a class="admin-link" href="/login">Admin Login</a>
+</div>
 
 <script>
 function onScanSuccess(decodedText) {
@@ -94,9 +106,6 @@ function onScanSuccess(decodedText) {
 new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 })
 .render(onScanSuccess);
 </script>
-
-<br><br>
-<a href="/login" style="color:white;">Admin Login</a>
 
 </body>
 </html>
@@ -113,7 +122,7 @@ def check(number):
     conn.close()
 
     if not card:
-        return "<h2>Card not found</h2><a href='/'>Back</a>"
+        return "<h2>Karte nicht gefunden</h2><a href='/'>Zurück</a>"
 
     name, points = card
 
@@ -121,65 +130,64 @@ def check(number):
 <!DOCTYPE html>
 <html>
 <head>
-<title>Your Card</title>
 <style>
 body {{
-    font-family: Arial;
-    text-align: center;
-    background: #f4f4f4;
-    padding: 30px;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    background:#f2f2f2;
+    font-family:Arial;
+}}
+.print-area {{
+    width:350px;
 }}
 .card {{
-    background: white;
-    padding: 25px;
-    border-radius: 20px;
-    max-width: 350px;
-    margin: auto;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+    border:3px dashed black;
+    border-radius:15px;
+    padding:20px;
+    text-align:center;
+    background:white;
 }}
-h2 {{
-    margin: 0;
-}}
-.points {{
-    font-size: 28px;
-    margin: 15px 0;
-    color: #2a5298;
-}}
-@media print {{
-    button {{ display:none; }}
-}}
+.name {{ font-size:22px; font-weight:bold; }}
+.points {{ font-size:28px; margin:20px 0; color:#2c5364; }}
+
 button {{
-    padding: 10px 20px;
-    border: none;
-    background: #2a5298;
-    color: white;
-    border-radius: 10px;
+    margin-top:15px;
+    padding:10px 20px;
+    background:#2c5364;
+    color:white;
+    border:none;
+    border-radius:8px;
+}}
+
+@media print {{
+    body * {{ visibility:hidden; }}
+    .print-area, .print-area * {{ visibility:visible; }}
+    .print-area {{ position:absolute; top:0; left:0; }}
+    button {{ display:none; }}
 }}
 </style>
 </head>
 <body>
 
-<div class="card">
-<h2>{name}</h2>
-<div class="points">Points: {points}</div>
-<p>Card: {number}</p>
+<div class="print-area">
+    <div class="card">
+        <div class="name">{name}</div>
+        <div class="points">{points} Punkte</div>
+        <div>Nr: {number}</div>
+    </div>
+    <button onclick="window.print()">Karte drucken</button>
 </div>
-
-<br>
-<button onclick="window.print()">Print</button>
-<br><br>
-<a href="/">Back</a>
 
 </body>
 </html>
 """
 
 
-# =====================================================
-# ================= ADMIN SIDE ========================
-# =====================================================
+# ================= ADMIN LOGIN =================
 
-@app.route("/login", methods=["GET", "POST"])
+@app.route("/login", methods=["GET","POST"])
 def login():
     if request.method == "POST":
         u = request.form["username"]
@@ -187,10 +195,7 @@ def login():
 
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute(
-            "SELECT * FROM users WHERE username=%s AND password=%s;",
-            (u, p)
-        )
+        cur.execute("SELECT * FROM users WHERE username=%s AND password=%s;", (u,p))
         user = cur.fetchone()
         cur.close()
         conn.close()
@@ -209,6 +214,8 @@ def login():
     """
 
 
+# ================= ADMIN DASHBOARD =================
+
 @app.route("/admin")
 def admin():
     if "user" not in session:
@@ -216,54 +223,139 @@ def admin():
 
     conn = get_connection()
     cur = conn.cursor()
+
+    cur.execute("SELECT COUNT(*) FROM cards;")
+    total_cards = cur.fetchone()[0]
+
+    cur.execute("SELECT COALESCE(SUM(points),0) FROM cards;")
+    total_points = cur.fetchone()[0]
+
     cur.execute("SELECT name, number, points FROM cards ORDER BY id DESC;")
     cards = cur.fetchall()
+
     cur.close()
     conn.close()
 
-    html = """
-    <h1>Admin Panel</h1>
-    <a href="/logout">Logout</a><br><br>
+    html = f"""
+<!DOCTYPE html>
+<html>
+<head>
+<title>Admin Dashboard</title>
+<style>
+body {{
+    margin:0;
+    font-family:Arial;
+    background:#f4f6f9;
+}}
+.header {{
+    background:#2c5364;
+    color:white;
+    padding:15px;
+    font-size:20px;
+}}
+.container {{
+    padding:30px;
+}}
+.stats {{
+    display:flex;
+    gap:20px;
+    margin-bottom:30px;
+}}
+.box {{
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    flex:1;
+    box-shadow:0 4px 10px rgba(0,0,0,0.1);
+}}
+button {{
+    padding:8px 15px;
+    border:none;
+    border-radius:6px;
+    background:#2c5364;
+    color:white;
+}}
+table {{
+    width:100%;
+    border-collapse:collapse;
+    background:white;
+    box-shadow:0 4px 10px rgba(0,0,0,0.1);
+}}
+th, td {{
+    padding:10px;
+    text-align:center;
+}}
+th {{
+    background:#2c5364;
+    color:white;
+}}
+tr:nth-child(even) {{
+    background:#f2f2f2;
+}}
+a {{
+    text-decoration:none;
+    color:#2c5364;
+    font-weight:bold;
+}}
+</style>
+</head>
+<body>
 
-    <h3>Create Card</h3>
-    <form method="post" action="/add">
-    <input name="name" placeholder="Name" required>
-    <button type="submit">Create</button>
-    </form>
+<div class="header">
+⭐ POINTS CLUB – Admin Dashboard
+</div>
 
-    <h3>Scan to Add Point</h3>
-    <div id="reader" style="width:300px;"></div>
+<div class="container">
 
-    <script src="https://unpkg.com/html5-qrcode"></script>
-    <script>
-    function onScanSuccess(decodedText) {
-        window.location.href = "/plus/" + decodedText;
-    }
-    new Html5QrcodeScanner("reader", { fps: 10, qrbox: 250 })
-    .render(onScanSuccess);
-    </script>
+<div class="stats">
+    <div class="box">
+        <h3>Gesamt Karten</h3>
+        <h2>{total_cards}</h2>
+    </div>
+    <div class="box">
+        <h3>Gesamt Punkte</h3>
+        <h2>{total_points}</h2>
+    </div>
+</div>
 
-    <h3>All Cards</h3>
-    <table border="1">
-    <tr><th>Name</th><th>Number</th><th>Points</th><th>Action</th></tr>
-    """
+<h3>Neue Karte erstellen</h3>
+<form method="post" action="/add">
+<input name="name" placeholder="Name" required>
+<button type="submit">Erstellen</button>
+</form>
+
+<br><br>
+
+<h3>Karten Übersicht</h3>
+<table>
+<tr><th>Name</th><th>Nummer</th><th>Punkte</th><th>Aktion</th></tr>
+"""
 
     for name, number, points in cards:
         html += f"""
-        <tr>
-        <td>{name}</td>
-        <td>{number}</td>
-        <td>{points}</td>
-        <td>
-        <a href="/plus/{number}">+1</a>
-        <a href="/delete/{number}">Delete</a>
-        </td>
-        </tr>
-        """
+<tr>
+<td>{name}</td>
+<td>{number}</td>
+<td>{points}</td>
+<td>
+<a href="/plus/{number}">+1</a> |
+<a href="/delete/{number}">Löschen</a>
+</td>
+</tr>
+"""
 
-    html += "</table>"
+    html += """
+</table>
+<br><br>
+<a href="/logout">Logout</a>
+</div>
+</body>
+</html>
+"""
     return html
 
+
+# ================= ACTIONS =================
 
 @app.route("/add", methods=["POST"])
 def add():
@@ -275,34 +367,19 @@ def add():
 
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO cards (name, number) VALUES (%s, %s);",
-        (name, number)
-    )
+    cur.execute("INSERT INTO cards (name, number) VALUES (%s, %s);",(name,number))
     conn.commit()
     cur.close()
     conn.close()
 
-    return f"""
-    <h2>Card Created</h2>
-    <p>Name: {name}</p>
-    <p>Number: {number}</p>
-    <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data={number}">
-    <br><br>
-    <button onclick="window.print()">Print Card</button>
-    <br><br>
-    <a href="/admin">Back</a>
-    """
+    return redirect("/admin")
 
 
 @app.route("/plus/<number>")
 def plus(number):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE cards SET points = points + 1 WHERE number=%s;",
-        (number,)
-    )
+    cur.execute("UPDATE cards SET points = points + 1 WHERE number=%s;",(number,))
     conn.commit()
     cur.close()
     conn.close()
@@ -313,10 +390,7 @@ def plus(number):
 def delete(number):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(
-        "DELETE FROM cards WHERE number=%s;",
-        (number,)
-    )
+    cur.execute("DELETE FROM cards WHERE number=%s;",(number,))
     conn.commit()
     cur.close()
     conn.close()
