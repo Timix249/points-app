@@ -14,7 +14,6 @@ def get_connection():
 
 
 # ---------- CREATE TABLES ----------
-@app.before_first_request
 def init_db():
     conn = get_connection()
     cur = conn.cursor()
@@ -47,6 +46,10 @@ def init_db():
     conn.commit()
     cur.close()
     conn.close()
+
+
+# 🔥 ВАЖЛИВО — викликаємо одразу
+init_db()
 
 
 # ---------- LOGIN ----------
@@ -98,14 +101,12 @@ def admin():
     html = """
     <h1>Admin</h1>
     <a href="/logout">Logout</a><br><br>
-
     <h3>Add card</h3>
     <form method="post" action="/add">
     Name:<br>
     <input name="name" required><br><br>
     <button type="submit">Add</button>
     </form>
-
     <h3>Cards</h3>
     <table border="1">
     <tr><th>Name</th><th>Number</th><th>Points</th><th>Action</th></tr>
